@@ -1,0 +1,29 @@
+# Binaries
+/gobittorrent
+/bin/
+/build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test and profiling output
+*.test
+*.out
+*.prof
+
+# Go workspace
+go.work
+go.work.sum
+
+# Environment
+.env
+
+# Downloaded torrent data
+/downloads/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
