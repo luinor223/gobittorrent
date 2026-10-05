@@ -22,6 +22,9 @@ go.work.sum
 # Downloaded torrent data
 /downloads/
 
+# Practice problems
+/docs/problems/
+
 # Editors and OS
 .idea/
 .vscode/
