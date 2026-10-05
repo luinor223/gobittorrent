@@ -1,6 +1,7 @@
 package bencode
 
 import (
+	"maps"
 	"reflect"
 	"slices"
 	"strconv"
@@ -62,11 +63,8 @@ func appendList(dst []byte, arr []any) ([]byte, error) {
 func appendDict(dst []byte, m map[string]any) ([]byte, error) {
 	dst = append(dst, 'd')
 	var err error
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
+	keys := slices.Sorted(maps.Keys(m))
+	
 	for _, key := range keys {
 		dst = appendString(dst, key)
 		dst, err = appendValue(dst, m[key])

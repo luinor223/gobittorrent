@@ -88,11 +88,12 @@ func (d *decoder) decodeInt() (int64, error) {
 
 // isCanonicalInt rejects leading zeros, "-0" and non-digits.
 func isCanonicalInt(s string) bool {
+	neg := strings.HasPrefix(s, "-")
 	digits := strings.TrimPrefix(s, "-")
 	if digits == "" {
 		return false
 	}
-	if digits[0] == '0' && (len(digits) > 1 || len(digits) != len(s)) {
+	if digits[0] == '0' && (len(digits) > 1 || neg) {
 		return false
 	}
 	for i := 0; i < len(digits); i++ {
@@ -105,9 +106,7 @@ func isCanonicalInt(s string) bool {
 
 // isNonNegativeInt is isCanonicalInt without a minus sign.
 func isNonNegativeInt(s string) bool {
-	digits := strings.TrimPrefix(s, "-")
-
-	return isCanonicalInt(digits) && len(digits) == len(s)
+	return !strings.HasPrefix(s, "-") && isCanonicalInt(s)
 }
 
 // decodeString reads a string like "4:spam".
