@@ -1,13 +1,13 @@
 package bencode
 
 import (
-	"errors"
+	"reflect"
 	"slices"
 	"strconv"
 )
 
-var errUnsupportedType = errors.New("unsupported type")
-
+// Marshal encodes v as bencode. It supports int, int64, string, []byte,
+// []any and map[string]any; dictionary keys are written in sorted order.
 func Marshal(v any) ([]byte, error) {
 	switch x := v.(type) {
 	case int:
@@ -24,7 +24,7 @@ func Marshal(v any) ([]byte, error) {
 		return marshalDict(x)
 	}
 
-	return nil, errUnsupportedType
+	return nil, &UnsupportedTypeError{Type: reflect.TypeOf(v)}
 }
 
 func marshalInt(v int64) []byte {
