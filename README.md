@@ -15,3 +15,7 @@ A BitTorrent desktop client written in Go.
 - [BEP 3: The BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html)
 - [BitTorrent Enhancement Proposals](https://www.bittorrent.org/beps/bep_0000.html)
 - [Building a BitTorrent client from the ground up in Go](https://blog.jse.li/posts/torrent/) by Jesse Li
+
+## License
+
+[MIT](LICENSE)
