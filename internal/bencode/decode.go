@@ -7,10 +7,13 @@ import (
 	"strings"
 )
 
+const maxDepth = 1000
+
 // decoder reads data starting at pos.
 type decoder struct {
-	data []byte
-	pos  int
+	data  []byte
+	pos   int
+	depth int
 }
 
 // Decode parses data as exactly one bencode value.
@@ -38,9 +41,21 @@ func (d *decoder) decodeValue() (any, error) {
 	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 		return d.decodeString()
 	case 'l':
-		return d.decodeList()
+		d.depth++
+		if d.depth > maxDepth {
+			return nil, d.syntaxError(fmt.Sprintf("nesting too deep, limit %d", maxDepth))
+		}
+		value, err := d.decodeList()
+		d.depth--
+		return value, err
 	case 'd':
-		return d.decodeDict()
+		d.depth++
+		if d.depth > maxDepth {
+			return nil, d.syntaxError(fmt.Sprintf("nesting too deep, limit %d", maxDepth))
+		}
+		value, err := d.decodeDict()
+		d.depth--
+		return value, err
 	}
 	return nil, d.syntaxError(fmt.Sprintf("invalid value prefix %q", d.data[d.pos]))
 }
