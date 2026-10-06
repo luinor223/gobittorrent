@@ -6,7 +6,14 @@ import (
 	"testing"
 )
 
-func TestDecode(t *testing.T) {
+// unmarshalAny decodes data into an any, the generic form these tests compare against.
+func unmarshalAny(data []byte) (any, error) {
+	var v any
+	err := Unmarshal(data, &v)
+	return v, err
+}
+
+func TestUnmarshal(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
@@ -48,18 +55,18 @@ func TestDecode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Decode([]byte(tt.input))
+			got, err := unmarshalAny([]byte(tt.input))
 			if err != nil {
-				t.Fatalf("Decode(%q) returned error: %v", tt.input, err)
+				t.Fatalf("Unmarshal(%q) returned error: %v", tt.input, err)
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Decode(%q)\n got: %#v\nwant: %#v", tt.input, got, tt.want)
+				t.Errorf("Unmarshal(%q)\n got: %#v\nwant: %#v", tt.input, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestDecodeInvalid(t *testing.T) {
+func TestUnmarshalInvalid(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
@@ -103,23 +110,23 @@ func TestDecodeInvalid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Decode([]byte(tt.input))
+			got, err := unmarshalAny([]byte(tt.input))
 			if err == nil {
-				t.Errorf("Decode(%q) = %#v, want error", tt.input, got)
+				t.Errorf("Unmarshal(%q) = %#v, want error", tt.input, got)
 			}
 		})
 	}
 }
 
-func TestDecodeDeepNesting(t *testing.T) {
+func TestUnmarshalDeepNesting(t *testing.T) {
 	const depth = 1000
 	input := strings.Repeat("l", depth) + strings.Repeat("e", depth)
-	if _, err := Decode([]byte(input)); err != nil {
-		t.Fatalf("Decode of %d nested lists returned error: %v", depth, err)
+	if _, err := unmarshalAny([]byte(input)); err != nil {
+		t.Fatalf("Unmarshal of %d nested lists returned error: %v", depth, err)
 	}
 }
 
-func TestDecodeTorrent(t *testing.T) {
+func TestUnmarshalTorrent(t *testing.T) {
 	pieces := strings.Repeat("\xab", 20) + strings.Repeat("\x00", 20)
 	input := "d" +
 		"8:announce" + "40:http://tracker.example.com:6969/announce" +
@@ -143,18 +150,18 @@ func TestDecodeTorrent(t *testing.T) {
 		},
 	}
 
-	got, err := Decode([]byte(input))
+	got, err := unmarshalAny([]byte(input))
 	if err != nil {
-		t.Fatalf("Decode returned error: %v", err)
+		t.Fatalf("Unmarshal returned error: %v", err)
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("Decode\n got: %#v\nwant: %#v", got, want)
+		t.Errorf("Unmarshal\n got: %#v\nwant: %#v", got, want)
 	}
 }
 
-// FuzzDecode checks that Decode never panics, whatever the input.
-// Run with: go test -fuzz=FuzzDecode ./internal/bencode
-func FuzzDecode(f *testing.F) {
+// FuzzUnmarshal checks that Unmarshal never panics, whatever the input.
+// Run with: go test -fuzz=FuzzUnmarshal ./internal/bencode
+func FuzzUnmarshal(f *testing.F) {
 	seeds := []string{
 		"i42e", "4:spam", "l4:spami42ee", "d3:bar4:spam3:fooi42ee",
 		"le", "de", "i-0e", "5:abc", "di1e3:fooe", "lli1eeli2eee",
@@ -163,6 +170,6 @@ func FuzzDecode(f *testing.F) {
 		f.Add([]byte(s))
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
-		Decode(data)
+		unmarshalAny(data)
 	})
 }

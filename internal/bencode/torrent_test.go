@@ -5,15 +5,15 @@ import (
 	"testing"
 )
 
-func TestDecodeDebianTorrent(t *testing.T) {
+func TestUnmarshalDebianTorrent(t *testing.T) {
 	data, err := os.ReadFile("testdata/debian.torrent")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	v, err := Decode(data)
+	v, err := unmarshalAny(data)
 	if err != nil {
-		t.Fatalf("Decode returned error: %v", err)
+		t.Fatalf("Unmarshal returned error: %v", err)
 	}
 
 	root, ok := v.(map[string]any)

@@ -26,3 +26,35 @@ func (e *UnsupportedTypeError) Error() string {
 	}
 	return "bencode: unsupported type " + e.Type.String()
 }
+
+// UnmarshalTypeError describes a bencode value that can't be stored in a Go type.
+type UnmarshalTypeError struct {
+	Value  string       // "integer", "string", "list" or "dictionary"
+	Type   reflect.Type // the Go type it couldn't be stored in
+	Offset int          // byte offset of the value
+	Field  string       // the struct field path, e.g. "Info.PieceLength", if any
+}
+
+func (e *UnmarshalTypeError) Error() string {
+	if e.Field != "" {
+		return fmt.Sprintf("bencode: cannot unmarshal %s into Go struct field %s of type %s at offset %d",
+			e.Value, e.Field, e.Type, e.Offset)
+	}
+	return fmt.Sprintf("bencode: cannot unmarshal %s into Go value of type %s at offset %d",
+		e.Value, e.Type, e.Offset)
+}
+
+// InvalidUnmarshalError describes an invalid argument passed to Unmarshal.
+type InvalidUnmarshalError struct {
+	Type reflect.Type
+}
+
+func (e *InvalidUnmarshalError) Error() string {
+	if e.Type == nil {
+		return "bencode: Unmarshal(nil)"
+	}
+	if e.Type.Kind() != reflect.Pointer {
+		return "bencode: Unmarshal(non-pointer " + e.Type.String() + ")"
+	}
+	return "bencode: Unmarshal(nil " + e.Type.String() + ")"
+}

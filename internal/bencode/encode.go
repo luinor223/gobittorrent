@@ -64,7 +64,7 @@ func appendDict(dst []byte, m map[string]any) ([]byte, error) {
 	dst = append(dst, 'd')
 	var err error
 	keys := slices.Sorted(maps.Keys(m))
-	
+
 	for _, key := range keys {
 		dst = appendString(dst, key)
 		dst, err = appendValue(dst, m[key])

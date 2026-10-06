@@ -124,9 +124,9 @@ func TestMarshalRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Marshal(%#v) returned error: %v", v, err)
 		}
-		got, err := Decode(b)
+		got, err := unmarshalAny(b)
 		if err != nil {
-			t.Fatalf("Decode(%q) returned error: %v", b, err)
+			t.Fatalf("Unmarshal(%q) returned error: %v", b, err)
 		}
 		if !reflect.DeepEqual(got, v) {
 			t.Errorf("round trip changed value\n got: %#v\nwant: %#v", got, v)
@@ -139,9 +139,9 @@ func TestMarshalDebianTorrentRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := Decode(data)
+	v, err := unmarshalAny(data)
 	if err != nil {
-		t.Fatalf("Decode returned error: %v", err)
+		t.Fatalf("Unmarshal returned error: %v", err)
 	}
 	got, err := Marshal(v)
 	if err != nil {
@@ -152,25 +152,25 @@ func TestMarshalDebianTorrentRoundTrip(t *testing.T) {
 	}
 }
 
-// FuzzMarshalRoundTrip checks that anything Decode accepts survives
-// Marshal and Decode again unchanged.
+// FuzzMarshalRoundTrip checks that anything Unmarshal accepts survives
+// Marshal and Unmarshal again unchanged.
 // Run with: go test -fuzz=FuzzMarshalRoundTrip ./internal/bencode
 func FuzzMarshalRoundTrip(f *testing.F) {
 	for _, s := range []string{"i42e", "4:spam", "l4:spami42ee", "d3:bar4:spam3:fooi42ee", "d1:bi1e1:ai2ee"} {
 		f.Add([]byte(s))
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
-		v, err := Decode(data)
+		v, err := unmarshalAny(data)
 		if err != nil {
 			return
 		}
 		b, err := Marshal(v)
 		if err != nil {
-			t.Fatalf("Marshal(Decode(%q)) returned error: %v", data, err)
+			t.Fatalf("Marshal(Unmarshal(%q)) returned error: %v", data, err)
 		}
-		got, err := Decode(b)
+		got, err := unmarshalAny(b)
 		if err != nil {
-			t.Fatalf("Decode(Marshal(...)) of %q returned error: %v", b, err)
+			t.Fatalf("Unmarshal(Marshal(...)) of %q returned error: %v", b, err)
 		}
 		if !reflect.DeepEqual(got, v) {
 			t.Fatalf("round trip changed value\n got: %#v\nwant: %#v", got, v)

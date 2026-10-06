@@ -3,11 +3,34 @@ package bencode
 import (
 	"bytes"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 )
 
 const maxDepth = 1000
+
+// Unmarshal parses data as exactly one bencode value and stores the result
+// in the value pointed to by v.
+func Unmarshal(data []byte, v any) error {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
+		return &InvalidUnmarshalError{Type: reflect.TypeOf(v)}
+	}
+
+	d := decoder{data: data}
+	if err := d.unmarshalValue(rv.Elem()); err != nil {
+		return err
+	}
+	if d.pos < len(d.data) {
+		return d.syntaxError("trailing data after value")
+	}
+	return nil
+}
+
+type RawMessage []byte
+
+var rawMessageType = reflect.TypeFor[RawMessage]()
 
 // decoder reads data starting at pos.
 type decoder struct {
@@ -16,48 +39,72 @@ type decoder struct {
 	depth int
 }
 
-// Decode parses data as exactly one bencode value.
-func Decode(data []byte) (any, error) {
-	d := decoder{data: data}
-	value, err := d.decodeValue()
-	if err != nil {
-		return nil, err
-	}
-	if d.pos < len(d.data) {
-		return nil, d.syntaxError("trailing data after value")
-	}
-
-	return value, nil
-}
-
-// decodeValue dispatches on the first byte at d.pos.
-func (d *decoder) decodeValue() (any, error) {
+// unmarshalValue dispatches on the first byte at d.pos.
+func (d *decoder) unmarshalValue(v reflect.Value) error {
 	if d.pos >= len(d.data) {
-		return nil, d.syntaxError("unexpected end of input")
+		return d.syntaxError("unexpected end of input")
 	}
+	if v.Type() == rawMessageType {
+		start := d.pos
+		if err := d.skipValue(); err != nil {
+			return err
+		}
+		v.SetBytes(bytes.Clone(d.data[start:d.pos]))
+		return nil
+	}
+
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			v.Set(reflect.New(v.Type().Elem()))
+		}
+		return d.unmarshalValue(v.Elem())
+	}
+
 	switch d.data[d.pos] {
 	case 'i':
-		return d.decodeInt()
+		return d.unmarshalInt(v)
 	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-		return d.decodeString()
-	case 'l':
+		return d.unmarshalString(v)
+	case 'l', 'd':
 		d.depth++
+		defer func() { d.depth-- }()
 		if d.depth > maxDepth {
-			return nil, d.syntaxError(fmt.Sprintf("nesting too deep, limit %d", maxDepth))
+			return d.syntaxError(fmt.Sprintf("nesting too deep, limit %d", maxDepth))
 		}
-		value, err := d.decodeList()
-		d.depth--
-		return value, err
-	case 'd':
-		d.depth++
-		if d.depth > maxDepth {
-			return nil, d.syntaxError(fmt.Sprintf("nesting too deep, limit %d", maxDepth))
+		if d.data[d.pos] == 'l' {
+			return d.unmarshalList(v)
 		}
-		value, err := d.decodeDict()
-		d.depth--
-		return value, err
+		return d.unmarshalDict(v)
 	}
-	return nil, d.syntaxError(fmt.Sprintf("invalid value prefix %q", d.data[d.pos]))
+	return d.syntaxError(fmt.Sprintf("invalid value prefix %q", d.data[d.pos]))
+}
+
+func (d *decoder) unmarshalInt(v reflect.Value) error {
+	start := d.pos
+	n, err := d.decodeInt()
+	if err != nil {
+		return err
+	}
+	switch v.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if v.OverflowInt(n) {
+			return &UnmarshalTypeError{Value: "integer", Type: v.Type(), Offset: start}
+		}
+		v.SetInt(n)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if n < 0 || v.OverflowUint(uint64(n)) {
+			return &UnmarshalTypeError{Value: "integer", Type: v.Type(), Offset: start}
+		}
+		v.SetUint(uint64(n))
+	case reflect.Interface:
+		if v.NumMethod() != 0 {
+			return &UnmarshalTypeError{Value: "integer", Type: v.Type(), Offset: start}
+		}
+		v.Set(reflect.ValueOf(n))
+	default:
+		return &UnmarshalTypeError{Value: "integer", Type: v.Type(), Offset: start}
+	}
+	return nil
 }
 
 // decodeInt reads an integer like "i42e".
@@ -109,6 +156,31 @@ func isNonNegativeInt(s string) bool {
 	return !strings.HasPrefix(s, "-") && isCanonicalInt(s)
 }
 
+func (d *decoder) unmarshalString(v reflect.Value) error {
+	start := d.pos
+	s, err := d.decodeString()
+	if err != nil {
+		return err
+	}
+	switch v.Kind() {
+	case reflect.String:
+		v.SetString(s)
+	case reflect.Slice:
+		if v.Type().Elem().Kind() != reflect.Uint8 {
+			return &UnmarshalTypeError{Value: "string", Type: v.Type(), Offset: start}
+		}
+		v.SetBytes([]byte(s))
+	case reflect.Interface:
+		if v.NumMethod() != 0 {
+			return &UnmarshalTypeError{Value: "string", Type: v.Type(), Offset: start}
+		}
+		v.Set(reflect.ValueOf(s))
+	default:
+		return &UnmarshalTypeError{Value: "string", Type: v.Type(), Offset: start}
+	}
+	return nil
+}
+
 // decodeString reads a string like "4:spam".
 func (d *decoder) decodeString() (string, error) {
 	n := bytes.IndexByte(d.data[d.pos:], ':')
@@ -136,62 +208,179 @@ func (d *decoder) decodeString() (string, error) {
 	return string(value), nil
 }
 
-// decodeList reads a list like "l4:spami42ee".
-func (d *decoder) decodeList() ([]any, error) {
+func (d *decoder) unmarshalList(v reflect.Value) error {
+	start := d.pos
+
+	if v.Kind() == reflect.Interface && v.NumMethod() == 0 {
+		list := reflect.New(reflect.TypeFor[[]any]()).Elem()
+		if err := d.unmarshalList(list); err != nil {
+			return err
+		}
+		v.Set(list)
+		return nil
+	}
+
+	if v.Kind() != reflect.Slice && v.Kind() != reflect.Array {
+		return &UnmarshalTypeError{Value: "list", Type: v.Type(), Offset: start}
+	}
+
 	if d.pos >= len(d.data) || d.data[d.pos] != 'l' {
-		return nil, d.syntaxError("expected list")
+		return d.syntaxError("expected list")
 	}
 	d.pos++
 
-	result := []any{}
+	isSlice := v.Kind() == reflect.Slice
+	if isSlice {
+		v.Set(reflect.MakeSlice(v.Type(), 0, 0))
+	}
 
+	i := 0
 	for d.pos < len(d.data) {
 		if d.data[d.pos] == 'e' {
 			d.pos++
-			return result, nil
+			if !isSlice {
+				for ; i < v.Len(); i++ {
+					v.Index(i).SetZero()
+				}
+			}
+			return nil
 		}
-		value, err := d.decodeValue()
-		if err != nil {
-			return nil, err
+
+		if isSlice {
+			v.Set(reflect.Append(v, reflect.Zero(v.Type().Elem())))
 		}
-		result = append(result, value)
+		if i < v.Len() {
+			if err := d.unmarshalValue(v.Index(i)); err != nil {
+				return err
+			}
+		} else if err := d.skipValue(); err != nil {
+			return err
+		}
+		i++
 	}
 
-	return nil, d.syntaxError("unterminated list")
+	return d.syntaxError("unterminated list")
 }
 
-// decodeDict reads a dictionary like "d3:cow3:mooe".
-func (d *decoder) decodeDict() (map[string]any, error) {
+// unmarshalDict reads a dictionary like "d3:cow3:mooe".
+func (d *decoder) unmarshalDict(v reflect.Value) error {
+	start := d.pos
+	if v.Kind() == reflect.Interface && v.NumMethod() == 0 {
+		dict := reflect.New(reflect.TypeFor[map[string]any]()).Elem()
+		if err := d.unmarshalDict(dict); err != nil {
+			return err
+		}
+		v.Set(dict)
+		return nil
+	}
+
 	if d.pos >= len(d.data) || d.data[d.pos] != 'd' {
-		return nil, d.syntaxError("expected dictionary")
+		return d.syntaxError("expected dictionary")
 	}
 	d.pos++
 
-	result := map[string]any{}
+	var fields map[string]int
+	switch v.Kind() {
+	case reflect.Struct:
+		fields = structFields(v.Type())
+	case reflect.Map:
+		if v.Type().Key().Kind() != reflect.String {
+			return &UnmarshalTypeError{Value: "dictionary", Type: v.Type(), Offset: start}
+		}
+		if v.IsNil() {
+			v.Set(reflect.MakeMap(v.Type()))
+		}
+	default:
+		return &UnmarshalTypeError{Value: "dictionary", Type: v.Type(), Offset: start}
+	}
 
 	for d.pos < len(d.data) {
 		if d.data[d.pos] == 'e' {
 			d.pos++
-			return result, nil
+			return nil
 		}
 		if c := d.data[d.pos]; c < '0' || c > '9' {
-			return nil, d.syntaxError("dictionary key must be a string")
+			return d.syntaxError("dictionary key must be a string")
 		}
 		key, err := d.decodeString()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if d.pos < len(d.data) && d.data[d.pos] == 'e' {
-			return nil, d.syntaxError(fmt.Sprintf("missing value for key %q", key))
+			return d.syntaxError(fmt.Sprintf("missing value for key %q", key))
 		}
-		value, err := d.decodeValue()
-		if err != nil {
-			return nil, err
+		switch v.Kind() {
+		case reflect.Struct:
+			i, ok := fields[key]
+			if ok {
+				if err := d.unmarshalValue(v.Field(i)); err != nil {
+					return err
+				}
+			} else if err := d.skipValue(); err != nil {
+				return err
+			}
+		case reflect.Map:
+			elem := reflect.New(v.Type().Elem()).Elem()
+			if err := d.unmarshalValue(elem); err != nil {
+				return err
+			}
+			keyValue := reflect.ValueOf(key)
+			v.SetMapIndex(keyValue, elem)
 		}
-		result[key] = value
 	}
 
-	return nil, d.syntaxError("unterminated dictionary")
+	return d.syntaxError("unterminated dictionary")
+}
+
+func (d *decoder) skipValue() error {
+	if d.pos >= len(d.data) {
+		return d.syntaxError("unexpected end of input")
+	}
+	switch d.data[d.pos] {
+	case 'i':
+		_, err := d.decodeInt()
+		return err
+	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+		_, err := d.decodeString()
+		return err
+	case 'l', 'd':
+		d.depth++
+		defer func() { d.depth-- }()
+		if d.depth > maxDepth {
+			return d.syntaxError(fmt.Sprintf("nesting too deep, limit %d", maxDepth))
+		}
+		d.pos++
+		for d.pos < len(d.data) {
+			if d.data[d.pos] == 'e' {
+				d.pos++
+				return nil
+			}
+			if err := d.skipValue(); err != nil {
+				return err
+			}
+		}
+	}
+	return d.syntaxError(fmt.Sprintf("invalid value prefix %q", d.data[d.pos]))
+}
+
+// structFields maps each bencode key to the index of its struct field.
+func structFields(t reflect.Type) map[string]int {
+	fields := make(map[string]int)
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		name := f.Name
+		if tag := f.Tag.Get("bencode"); tag != "" {
+			if tag == "-" {
+				continue
+			}
+			name, _, _ = strings.Cut(tag, ",")
+		}
+		fields[name] = i
+	}
+	return fields
 }
 
 // syntaxError returns a *SyntaxError at the current position.
