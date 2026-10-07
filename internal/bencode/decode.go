@@ -279,7 +279,7 @@ func (d *decoder) unmarshalDict(v reflect.Value) error {
 	}
 	d.pos++
 
-	var fields map[string]int
+	var fields map[string]field
 	switch v.Kind() {
 	case reflect.Struct:
 		fields = structFields(v.Type())
@@ -311,9 +311,9 @@ func (d *decoder) unmarshalDict(v reflect.Value) error {
 		}
 		switch v.Kind() {
 		case reflect.Struct:
-			i, ok := fields[key]
+			f, ok := fields[key]
 			if ok {
-				if err := d.unmarshalValue(v.Field(i)); err != nil {
+				if err := d.unmarshalValue(v.Field(f.index)); err != nil {
 					return err
 				}
 			} else if err := d.skipValue(); err != nil {
@@ -363,22 +363,32 @@ func (d *decoder) skipValue() error {
 	return d.syntaxError(fmt.Sprintf("invalid value prefix %q", d.data[d.pos]))
 }
 
+type field struct {
+	index     int
+	omitEmpty bool
+}
+
 // structFields maps each bencode key to the index of its struct field.
-func structFields(t reflect.Type) map[string]int {
-	fields := make(map[string]int)
+func structFields(t reflect.Type) map[string]field {
+	fields := make(map[string]field)
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		if !f.IsExported() {
 			continue
 		}
 		name := f.Name
+		omitEmpty := false
 		if tag := f.Tag.Get("bencode"); tag != "" {
 			if tag == "-" {
 				continue
 			}
-			name, _, _ = strings.Cut(tag, ",")
+			var options string
+			name, options, _ = strings.Cut(tag, ",")
+			if options == "omitempty" {
+				omitEmpty = true
+			}
 		}
-		fields[name] = i
+		fields[name] = field{index: i, omitEmpty: omitEmpty}
 	}
 	return fields
 }

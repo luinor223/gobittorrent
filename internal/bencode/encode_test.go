@@ -46,6 +46,30 @@ func TestMarshal(t *testing.T) {
 		{"byte order, not length", map[string]any{"bb": int64(2), "a": int64(1), "c": int64(3)}, "d1:ai1e2:bbi2e1:ci3ee"},
 		{"uppercase before lowercase", map[string]any{"b": int64(2), "B": int64(1)}, "d1:Bi1e1:bi2ee"},
 		{"nested dict", map[string]any{"a": map[string]any{"b": map[string]any{"c": int64(1)}}}, "d1:ad1:bd1:ci1eeee"},
+
+		// Typed values
+		{"int8", int8(-5), "i-5e"},
+		{"uint16", uint16(80), "i80e"},
+		{"string slice", []string{"a", "b"}, "l1:a1:be"},
+		{"byte array", [2]byte{'h', 'i'}, "2:hi"},
+		{"int array", [2]int{1, 2}, "li1ei2ee"},
+		{"string map", map[string]string{"b": "2", "a": "1"}, "d1:a1:11:b1:2e"},
+		{"pointer", &[]int{1}, "li1ee"},
+		{"empty struct", struct{}{}, "de"},
+		{"struct sorted by key", struct {
+			Name   string `bencode:"name"`
+			Length int64  `bencode:"length"`
+			Skip   int    `bencode:"-"`
+			hidden int
+		}{Name: "a", Length: 5}, "d6:lengthi5e4:name1:ae"},
+		{"struct omitempty", struct {
+			A string `bencode:"a,omitempty"`
+			B string `bencode:"b,omitempty"`
+		}{B: "x"}, "d1:b1:xe"},
+		{"struct without tags", struct{ X int }{X: 1}, "d1:Xi1ee"},
+		{"raw message", struct {
+			Info RawMessage `bencode:"info"`
+		}{Info: RawMessage("d1:ai1ee")}, "d4:infod1:ai1eee"},
 	}
 
 	for _, tt := range tests {
@@ -73,10 +97,10 @@ func TestMarshalInvalid(t *testing.T) {
 		{"float in list", []any{1.5}},
 		{"nil in dict", map[string]any{"a": nil}},
 
-		{"struct", struct{}{}},
-		{"unsupported slice type", []string{"a"}},
-		{"unsupported map type", map[string]string{"a": "b"}},
 		{"deeply nested", []any{map[string]any{"a": []any{int64(1), 2.5}}}},
+		{"nil pointer", (*int)(nil)},
+		{"non-string map key", map[int]string{1: "a"}},
+		{"uint64 too large", uint64(1 << 63)},
 	}
 
 	for _, tt := range tests {
