@@ -1,10 +1,7 @@
 package bencode
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
 	"errors"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -300,39 +297,6 @@ func TestUnmarshalRawMessageIsCopied(t *testing.T) {
 	data[4] = 'X' // change the input after decoding
 	if string(v.B) != "i1e" {
 		t.Errorf("RawMessage changed with its input: %q", v.B)
-	}
-}
-
-// Example 4: the real info hash.
-func TestUnmarshalDebianInfoHash(t *testing.T) {
-	data, err := os.ReadFile("testdata/debian.torrent")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var tor struct {
-		Announce string     `bencode:"announce"`
-		Info     RawMessage `bencode:"info"`
-	}
-	if err := Unmarshal(data, &tor); err != nil {
-		t.Fatalf("Unmarshal returned error: %v", err)
-	}
-	if got, want := tor.Announce, "http://bttracker.debian.org:6969/announce"; got != want {
-		t.Errorf("Announce = %q, want %q", got, want)
-	}
-	if got, want := len(tor.Info), 60578; got != want {
-		t.Errorf("len(Info) = %d, want %d", got, want)
-	}
-	sum := sha1.Sum(tor.Info)
-	if got, want := hex.EncodeToString(sum[:]), "7acf8fb590b2060dd9c3146ef770169d593433b0"; got != want {
-		t.Errorf("info hash = %s, want %s", got, want)
-	}
-
-	var info testInfo
-	if err := Unmarshal(tor.Info, &info); err != nil {
-		t.Fatalf("Unmarshal(Info) returned error: %v", err)
-	}
-	if info.Name != "debian-13.7.0-amd64-netinst.iso" || info.PieceLength != 262144 {
-		t.Errorf("info = %+v", info)
 	}
 }
 

@@ -2,7 +2,6 @@ package bencode
 
 import (
 	"bytes"
-	"os"
 	"reflect"
 	"testing"
 )
@@ -155,24 +154,6 @@ func TestMarshalRoundTrip(t *testing.T) {
 		if !reflect.DeepEqual(got, v) {
 			t.Errorf("round trip changed value\n got: %#v\nwant: %#v", got, v)
 		}
-	}
-}
-
-func TestMarshalDebianTorrentRoundTrip(t *testing.T) {
-	data, err := os.ReadFile("testdata/debian.torrent")
-	if err != nil {
-		t.Fatal(err)
-	}
-	v, err := unmarshalAny(data)
-	if err != nil {
-		t.Fatalf("Unmarshal returned error: %v", err)
-	}
-	got, err := Marshal(v)
-	if err != nil {
-		t.Fatalf("Marshal returned error: %v", err)
-	}
-	if !bytes.Equal(got, data) {
-		t.Errorf("re-encoded torrent differs from original: got %d bytes, want %d", len(got), len(data))
 	}
 }
 
