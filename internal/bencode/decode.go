@@ -355,6 +355,7 @@ func (d *decoder) skipValue() error {
 				return err
 			}
 		}
+		return d.syntaxError("unterminated list or dictionary")
 	}
 	return d.syntaxError(fmt.Sprintf("invalid value prefix %q", d.data[d.pos]))
 }
